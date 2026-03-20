@@ -7,6 +7,7 @@ from typing import List, Optional
 
 app = FastAPI(title="BAC Prediction API")
 
+
 # =========================
 # LAZY LOAD MODEL + FEATURE LIST
 # =========================
@@ -32,14 +33,10 @@ def get_feature_columns():
 # =========================
 # REQUEST SCHEMA
 # =========================
-class Sample(BaseModel):
-    x: float
-    y: float
-    z: float
-
-
 class Payload(BaseModel):
-    samples: List[Sample]
+    x: List[float]
+    y: List[float]
+    z: List[float]
 
 
 # =========================
@@ -85,31 +82,16 @@ def _safe_percentile(arr, q, default=0.0):
 # =========================
 # FEATURE EXTRACTION
 # =========================
-def extract_features_from_samples(samples):
-    xs, ys, zs = [], [], []
-
-    for s in samples:
-        try:
-            if isinstance(s, dict):
-                xs.append(float(s["x"]))
-                ys.append(float(s["y"]))
-                zs.append(float(s["z"]))
-            else:
-                xs.append(float(s.x))
-                ys.append(float(s.y))
-                zs.append(float(s.z))
-        except Exception:
-            continue
-
-    x = _safe_float_array(xs)
-    y = _safe_float_array(ys)
-    z = _safe_float_array(zs)
+def extract_features_from_xyz(x_list, y_list, z_list):
+    x = _safe_float_array(x_list)
+    y = _safe_float_array(y_list)
+    z = _safe_float_array(z_list)
 
     n = int(min(len(x), len(y), len(z)))
     x, y, z = x[:n], y[:n], z[:n]
 
     if n < 5:
-        raise ValueError("Cần ít nhất 5 mẫu hợp lệ có đủ x, y, z.")
+        raise ValueError("Cần ít nhất 5 mẫu hợp lệ.")
 
     magnitude = np.sqrt(x**2 + y**2 + z**2)
     magnitude_dyn = magnitude - np.mean(magnitude)
@@ -159,7 +141,15 @@ def health():
 @app.post("/predict")
 def predict_from_samples(payload: Payload):
     try:
-        features, n_used = extract_features_from_samples(payload.samples)
+        if not (len(payload.x) == len(payload.y) == len(payload.z)):
+            return {"error": "x, y, z phải cùng độ dài."}
+
+        features, n_used = extract_features_from_xyz(
+            payload.x,
+            payload.y,
+            payload.z
+        )
+
         feature_columns = get_feature_columns()
         model = get_model()
 
@@ -183,6 +173,4 @@ def predict_from_samples(payload: Payload):
         }
 
     except Exception as e:
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
