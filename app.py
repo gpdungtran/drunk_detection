@@ -3,17 +3,30 @@ import joblib
 import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-
-# =========================
-# LOAD MODEL + FEATURE LIST
-# =========================
-model = joblib.load("model.pkl")
-
-with open("feature_columns.json", "r", encoding="utf-8") as f:
-    feature_columns = json.load(f)
+from typing import List, Optional
 
 app = FastAPI(title="BAC Prediction API")
+
+# =========================
+# LAZY LOAD MODEL + FEATURE LIST
+# =========================
+_model = None
+_feature_columns = None
+
+
+def get_model():
+    global _model
+    if _model is None:
+        _model = joblib.load("model.pkl")
+    return _model
+
+
+def get_feature_columns():
+    global _feature_columns
+    if _feature_columns is None:
+        with open("feature_columns.json", "r", encoding="utf-8") as f:
+            _feature_columns = json.load(f)
+    return _feature_columns
 
 
 # =========================
@@ -114,8 +127,8 @@ def extract_features_from_samples(samples):
         "jerk_std": float(np.std(jerk)) if jerk.size > 0 else 0.0,
         "jerk_p95": _safe_percentile(np.abs(jerk), 95, default=0.0),
         "jerk_iqr": float(
-            _safe_percentile(jerk, 75, default=0.0) -
-            _safe_percentile(jerk, 25, default=0.0)
+            _safe_percentile(jerk, 75, default=0.0)
+            - _safe_percentile(jerk, 25, default=0.0)
         ) if jerk.size > 0 else 0.0,
         "magnitude_std": float(np.std(magnitude)),
         "magnitude_dyn_autocorr1": _autocorr_lag1(magnitude_dyn),
@@ -147,25 +160,29 @@ def health():
 def predict_from_samples(payload: Payload):
     try:
         features, n_used = extract_features_from_samples(payload.samples)
+        feature_columns = get_feature_columns()
+        model = get_model()
+
+        x_input = np.array(
+            [[features.get(col, 0.0) for col in feature_columns]],
+            dtype=float
+        )
+
+        pred = model.predict(x_input)[0]
+
+        prob: Optional[float] = None
+        if hasattr(model, "predict_proba"):
+            prob = float(model.predict_proba(x_input)[0][1])
+
+        return {
+            "drunk": bool(int(pred)),
+            "prediction": int(pred),
+            "label": "intoxicated" if int(pred) == 1 else "sober",
+            "probability_class_1": prob,
+            "n_samples": int(n_used)
+        }
+
     except Exception as e:
-        return {"error": str(e)}
-
-    x_input = np.array(
-        [[features.get(col, 0.0) for col in feature_columns]],
-        dtype=float
-    )
-
-    pred = model.predict(x_input)[0]
-
-    prob: Optional[float] = None
-    if hasattr(model, "predict_proba"):
-        prob = float(model.predict_proba(x_input)[0][1])
-
-    return {
-        "drunk": bool(int(pred)),
-        "prediction": int(pred),
-        "label": "intoxicated" if int(pred) == 1 else "sober",
-        "probability_class_1": prob,
-        "n_samples": int(n_used),
-        "features_used": features
-    }
+        return {
+            "error": str(e)
+        }
