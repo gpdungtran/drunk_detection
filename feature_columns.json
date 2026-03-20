@@ -1,0 +1,1 @@
+["x_spec_energy", "y_spec_energy", "z_spec_energy", "magnitude_spec_energy", "x_zero_crossings", "y_zero_crossings", "z_zero_crossings", "magnitude_dyn_zero_crossings", "x_energy", "y_energy", "z_energy", "magnitude_energy", "jerk_std", "magnitude_std", "jerk_p95", "jerk_iqr", "magnitude_dyn_autocorr1", "magnitude_dyn_spec_centroid", "magnitude_dyn_spec_rolloff85"]
